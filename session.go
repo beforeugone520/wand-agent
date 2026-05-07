@@ -43,7 +43,16 @@ func (sm *SessionManager) Create(cwd string, cols, rows int) (*Session, error) {
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	env := os.Environ()
+	if os.Getenv("LANG") == "" {
+		env = append(env, "LANG=C.UTF-8")
+	}
+	cmd.Env = append(env,
+		"TERM=xterm-256color",
+		"COLORTERM=truecolor",
+		"TERM_PROGRAM=wand",
+		"TERM_PROGRAM_VERSION=0.1.0",
+	)
 
 	fd, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
 	if err != nil {
