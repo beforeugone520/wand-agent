@@ -6,6 +6,8 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 )
 
 func main() {
@@ -21,6 +23,16 @@ func main() {
 	}
 
 	sm := NewSessionManager()
+
+	log.Printf("login shell: %s", loginShell)
+	if data, err := os.ReadFile("/etc/shells"); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				log.Printf("available shell: %s", line)
+			}
+		}
+	}
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()

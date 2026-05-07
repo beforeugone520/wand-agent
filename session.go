@@ -16,6 +16,7 @@ type Session struct {
 	PTY    *os.File
 	Cmd    *exec.Cmd
 	CWD    string
+	Shell  string
 	mu     sync.Mutex
 	closed bool
 }
@@ -38,10 +39,16 @@ func init() {
 	}
 }
 
-func (sm *SessionManager) Create(cwd string, cols, rows int) (*Session, error) {
-	cmd := exec.Command(loginShell, "-l")
+func (sm *SessionManager) Create(cwd string, cols, rows int, shell ...string) (*Session, error) {
+	shellPath := loginShell
+	if len(shell) > 0 && shell[0] != "" {
+		shellPath = shell[0]
+	}
+	cmd := exec.Command(shellPath, "-l")
 	if cwd != "" {
 		cmd.Dir = cwd
+	} else if home, err := os.UserHomeDir(); err == nil {
+		cmd.Dir = home
 	}
 	env := os.Environ()
 	if os.Getenv("LANG") == "" {
@@ -59,7 +66,7 @@ func (sm *SessionManager) Create(cwd string, cols, rows int) (*Session, error) {
 		return nil, fmt.Errorf("pty start: %w", err)
 	}
 
-	session := &Session{ID: newID(), PTY: fd, Cmd: cmd, CWD: cwd}
+	session := &Session{ID: newID(), PTY: fd, Cmd: cmd, CWD: cwd, Shell: shellPath}
 
 	if cwd == "" {
 		link := fmt.Sprintf("/proc/%d/cwd", cmd.Process.Pid)

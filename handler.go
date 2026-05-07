@@ -2,8 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
@@ -29,6 +33,10 @@ func handleWS(sm *SessionManager, w http.ResponseWriter, r *http.Request) {
 		}
 		cwd = r.Form.Get("cwd")
 	}
+	shell := r.Form.Get("shell")
+	if shell == "" {
+		shell = loginShell
+	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -37,18 +45,50 @@ func handleWS(sm *SessionManager, w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	session, err := sm.Create(cwd, cols, rows)
+	session, err := sm.Create(cwd, cols, rows, shell)
 	if err != nil {
 		log.Printf("create session: %v", err)
 		return
 	}
 	defer cleanupSession(sm, session)
 
+	// Push initial CWD to frontend
+	if initCwd, _ := json.Marshal(map[string]string{"type": "cwd", "dir": session.CWD}); initCwd != nil {
+		conn.WriteMessage(websocket.TextMessage, initCwd)
+	}
+
 	done := make(chan struct{})
+
+	// Start CWD polling goroutine
+	go pollCwd(session, conn, done)
 
 	go ptyToWS(session, conn, done)
 
 	wsToPTY(sm, session, conn, done)
+}
+
+func pollCwd(session *Session, conn *websocket.Conn, done chan struct{}) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+		}
+		if session.isClosed() {
+			return
+		}
+		link := fmt.Sprintf("/proc/%d/cwd", session.Cmd.Process.Pid)
+		if wd, err := os.Readlink(link); err == nil && wd != session.CWD {
+			session.mu.Lock()
+			session.CWD = wd
+			session.mu.Unlock()
+			if msg, err := json.Marshal(map[string]string{"type": "cwd", "dir": wd}); err == nil {
+				conn.WriteMessage(websocket.TextMessage, msg)
+			}
+		}
+	}
 }
 
 func ptyToWS(session *Session, conn *websocket.Conn, done chan struct{}) {
@@ -120,6 +160,18 @@ func handleCtrl(sm *SessionManager, session *Session, conn *websocket.Conn, msg 
 		return true
 	case "ping":
 		return true
+	case "shells":
+		data, _ := os.ReadFile("/etc/shells")
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		var shells []string
+		for _, line := range lines {
+			if trimmed := strings.TrimSpace(line); trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+				shells = append(shells, trimmed)
+			}
+		}
+		resp, _ := json.Marshal(map[string]interface{}{"type": "shells", "list": shells})
+		conn.WriteMessage(websocket.TextMessage, resp)
+		return true
 	case "cwd":
 		resp, _ := json.Marshal(map[string]string{"type": "cwd", "dir": session.CWD})
 		conn.WriteMessage(websocket.TextMessage, resp)
@@ -129,7 +181,7 @@ func handleCtrl(sm *SessionManager, session *Session, conn *websocket.Conn, msg 
 		if ctrl.CWD != "" {
 			cwd = ctrl.CWD
 		}
-		forked, err := sm.Create(cwd, *cols, *rows)
+		forked, err := sm.Create(cwd, *cols, *rows, session.Shell)
 		if err != nil {
 			resp, _ := json.Marshal(map[string]string{"type": "error", "error": err.Error()})
 			conn.WriteMessage(websocket.TextMessage, resp)
