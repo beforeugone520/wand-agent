@@ -92,19 +92,27 @@ func pollCwd(session *Session, conn *websocket.Conn, done chan struct{}) {
 }
 
 func ptyToWS(session *Session, conn *websocket.Conn, done chan struct{}) {
-	buf := make([]byte, 4096)
+	buf := make([]byte, 65536)
+	acc := make([]byte, 0, 131072)
 	for {
 		n, err := session.PTY.Read(buf)
 		if err != nil {
+			if len(acc) > 0 {
+				conn.WriteMessage(websocket.BinaryMessage, acc)
+			}
 			close(done)
 			return
 		}
 		if session.isClosed() {
 			return
 		}
-		if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
-			close(done)
-			return
+		acc = append(acc, buf[:n]...)
+		if len(acc) >= 65536 || n < len(buf) {
+			if err := conn.WriteMessage(websocket.BinaryMessage, acc); err != nil {
+				close(done)
+				return
+			}
+			acc = acc[:0]
 		}
 	}
 }
@@ -121,12 +129,41 @@ func wsToPTY(sm *SessionManager, session *Session, conn *websocket.Conn, done ch
 			return
 		}
 
+		log.Printf("wsToPTY received %d bytes", len(msg))
+
 		if isJSONCtrl(msg) {
 			if handled := handleCtrl(sm, session, conn, msg, &cols, &rows); handled {
 				continue
 			}
 		}
-		session.PTY.Write(msg)
+
+		// Bracketed paste mode markers — bash 4.4+ processes paste without
+		// echoing each character, dramatically reducing PTY round-trips.
+		useBracketedPaste := len(msg) > 4096
+		if useBracketedPaste {
+			session.PTY.Write([]byte("\x1b[200~"))
+		}
+		chunkSize := 16384
+		for off := 0; off < len(msg); off += chunkSize {
+			end := off + chunkSize
+			if end > len(msg) {
+				end = len(msg)
+			}
+			chunk := msg[off:end]
+			n, err := session.PTY.Write(chunk)
+			if err != nil {
+				log.Printf("PTY write error at offset %d: %v", off, err)
+				break
+			}
+			if n < len(chunk) {
+				log.Printf("PTY partial write: %d < %d at offset %d", n, len(chunk), off)
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+		if useBracketedPaste {
+			session.PTY.Write([]byte("\x1b[201~"))
+		}
+		log.Printf("PTY write total %d bytes", len(msg))
 	}
 }
 
