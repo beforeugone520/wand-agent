@@ -8,11 +8,11 @@ Creates a PTY session for each WebSocket connection, forwarding terminal I/O bet
 
 ```bash
 # ARM64（LOH / 轻量级鸿蒙）
-wget https://github.com/ystyle/wand-agent/releases/latest/download/wand-agent-linux-arm64 -O wand-agent
+curl -LO https://github.com/ystyle/wand-agent/releases/latest/download/wand-agent-linux-arm64 && chmod +x wand-agent
 chmod +x wand-agent
 
 # x86_64
-wget https://github.com/ystyle/wand-agent/releases/latest/download/wand-agent-linux-amd64 -O wand-agent
+curl -LO https://github.com/ystyle/wand-agent/releases/latest/download/wand-agent-linux-amd64 && chmod +x wand-agent
 chmod +x wand-agent
 
 # 启动
