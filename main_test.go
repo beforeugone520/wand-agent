@@ -135,6 +135,52 @@ func TestSessionLimit(t *testing.T) {
 	})
 }
 
+func TestOriginAcceptedByDefault(t *testing.T) {
+	_, wsURL := newTestServer(t, 4)
+	header := http.Header{
+		"Authorization": []string{"Bearer secret"},
+		"Origin":        []string{"http://some-native-stack.local"},
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		t.Fatalf("dial with origin should succeed when no allowlist is set: %v", err)
+	}
+	conn.Close()
+}
+
+func TestOriginStrictAllowlist(t *testing.T) {
+	auth := newAuthConfig("secret", true, "https://allowed.example")
+	sm := NewSessionManager(4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !auth.authorize(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		handleWS(sm, auth, w, r)
+	}))
+	defer server.Close()
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "?cols=80&rows=24"
+
+	badHeader := http.Header{
+		"Authorization": []string{"Bearer secret"},
+		"Origin":        []string{"https://evil.example"},
+	}
+	if conn, _, err := websocket.DefaultDialer.Dial(wsURL, badHeader); err == nil {
+		conn.Close()
+		t.Fatal("disallowed origin must be rejected in strict mode")
+	}
+
+	goodHeader := http.Header{
+		"Authorization": []string{"Bearer secret"},
+		"Origin":        []string{"https://allowed.example"},
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, goodHeader)
+	if err != nil {
+		t.Fatalf("allowlisted origin should connect: %v", err)
+	}
+	conn.Close()
+}
+
 func TestForkUnsupported(t *testing.T) {
 	_, wsURL := newTestServer(t, 4)
 	header := http.Header{"Authorization": []string{"Bearer secret"}}

@@ -86,7 +86,7 @@ func handleWS(sm *SessionManager, auth *authConfig, w http.ResponseWriter, r *ht
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("upgrade: %v", err)
+		log.Printf("upgrade: %v (origin=%q)", err, r.Header.Get("Origin"))
 		return
 	}
 	defer conn.Close()

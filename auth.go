@@ -44,10 +44,15 @@ func (a *authConfig) authorize(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(presented), []byte(a.token)) == 1
 }
 
-// originAllowed rejects browser cross-origin connections by default: requests
-// without an Origin header (native clients such as FusionTerm) are accepted,
-// anything else must match the explicit allowlist.
+// originAllowed: the bearer token is the primary gate — a cross-site page
+// cannot know it, so any Origin is accepted by default (native WebSocket
+// stacks such as HarmonyOS do send an Origin header). Configuring
+// --allow-origins switches to a strict allowlist for browser deployments;
+// requests without an Origin header are always accepted.
 func (a *authConfig) originAllowed(r *http.Request) bool {
+	if len(a.allowedOrigins) == 0 {
+		return true
+	}
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return true

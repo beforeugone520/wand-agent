@@ -21,7 +21,7 @@ func main() {
 	allowQueryToken := flag.Bool("allow-query-token", true,
 		"also accept ?token= query auth for legacy clients (Authorization: Bearer is always accepted)")
 	allowOrigins := flag.String("allow-origins", "",
-		"comma-separated Origin allowlist; empty allows only requests without an Origin header (native clients)")
+		"enable a strict comma-separated Origin allowlist (browser deployments); empty accepts any Origin since the bearer token is the auth gate")
 	flag.Parse()
 
 	authToken := *token
