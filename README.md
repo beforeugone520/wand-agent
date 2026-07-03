@@ -1,5 +1,31 @@
 # wand-agent
 
+> **Hardened fork** (`beforeugone520/wand-agent`) — security & correctness pass
+> for use as the FusionTerm VM backend (2026-07-03):
+>
+> - WebSocket frame type decides routing: **binary frames always go to the
+>   PTY**, only text frames are parsed as JSON control messages (typing JSON
+>   into the shell no longer triggers control paths).
+> - All connection writes are serialized through a single writer
+>   (gorilla/websocket allows at most one concurrent writer).
+> - Auth accepts `Authorization: Bearer <token>` (query `?token=` kept for
+>   legacy clients, disable with `--allow-query-token=false`), constant-time
+>   compare, browser `Origin` rejected unless allowlisted via
+>   `--allow-origins`. Default bind is `127.0.0.1`; expose explicitly with
+>   `--host <bridge-ip>`.
+> - Shell teardown signals the whole **process group** (SIGHUP, then SIGKILL
+>   after 3s) and shell exit is reported to the client as
+>   `{"type":"exit"}`.
+> - `--host`, `--port`, `--max-sessions` are now real flags; the session
+>   limit is enforced.
+> - The agent no longer injects bracketed-paste markers around large writes —
+>   paste encoding belongs to the client.
+> - Protocol-level ping/pong heartbeat with read deadlines; JSON `ping` is
+>   answered with `pong`.
+> - `fork` is removed (it created orphan sessions); open one WebSocket per
+>   terminal instead.
+
+
 WebSocket PTY agent for [wand](https://github.com/ystyle/wand) — a HarmonyOS terminal emulator.
 
 Creates a PTY session for each WebSocket connection, forwarding terminal I/O between the HarmonyOS app and a shell running in an openEuler container.

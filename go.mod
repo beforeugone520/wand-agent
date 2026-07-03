@@ -1,6 +1,6 @@
 module github.com/ystyle/wand-agent
 
-go 1.26
+go 1.21
 
 require (
 	github.com/creack/pty v1.1.24
